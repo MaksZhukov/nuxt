@@ -1,8 +1,14 @@
+import { fileURLToPath } from 'node:url'
+import { normalize } from 'pathe'
+import { withoutTrailingSlash } from 'ufo'
 import { describe, expect, it } from 'vitest'
 import type { Nitro, RouteRuleConfig } from 'nitro/types'
 import type { NuxtPage } from 'nuxt/schema'
 
+import { loadNuxt } from '../src/index.ts'
 import { markPagesCoveredByRouteRule } from '../src/pages/route-coverage.ts'
+
+const pagesFixtureDir = withoutTrailingSlash(normalize(fileURLToPath(new URL('./pages-fixture', import.meta.url))))
 
 const UNESCAPE_RE = /\\(.)/g
 const PARAM_RE = /(?:^|[^\\]):/
@@ -59,5 +65,35 @@ describe('markPagesCoveredByRouteRule', () => {
       '/test\\:name': { ssr: false },
     })
     expect(isCovered(nitro, [{ path: '/test\\:name', file: 'test.vue' }]).get('/test\\:name')).toBe(true)
+  })
+
+  it('should match pages against percent-encoded route rule keys', async () => {
+    let nitro: Nitro | undefined
+    const nuxt = await loadNuxt({
+      cwd: pagesFixtureDir,
+      ready: false,
+      overrides: {
+        routeRules: {
+          '/café/**': { ssr: false },
+          '/café/secret': { ssr: true },
+        },
+      },
+    })
+    nuxt.hook('nitro:init', (instance) => { nitro = instance as Nitro })
+    try {
+      await nuxt.ready()
+      const marks = isCovered(nitro!, [
+        { path: '/café/about', file: 'about.vue' },
+        { path: '/caf%C3%A9/contact', file: 'contact.vue' },
+        { path: '/café/:id()', file: 'id.vue' },
+      ])
+      expect(Object.fromEntries(marks)).toEqual({
+        '/café/about': true,
+        '/caf%C3%A9/contact': true,
+        '/café/:id()': false,
+      })
+    } finally {
+      await nuxt.close()
+    }
   })
 })
