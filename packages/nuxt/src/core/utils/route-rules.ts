@@ -1,9 +1,9 @@
 import { addRoute, createRouter, findAllRoutes } from 'rou3'
 import { compileRouterToString } from 'rou3/compiler'
-import type { RouterCompilerOptions } from 'rou3/compiler'
+import type { CompileRouterToStringOptions } from 'rou3/compiler'
 import { tryUseNitro } from '@nuxt/kit'
 import type { Nuxt, RouteRuleConfig } from '@nuxt/schema'
-import { decodeRoutePath } from './index.ts'
+import { decodeRoutePath, encodeRoutePath } from './index.ts'
 
 /** One entry of a route-rules router: the pattern it matches and the rules it resolves to. */
 export interface RouteRulesRoute {
@@ -16,7 +16,7 @@ export interface RouteRulesRoute {
 export interface RouteRulesRouter {
   routes: RouteRulesRoute[]
   matchAll (method: string, path: string): Record<string, any>[]
-  compileToString (options?: RouterCompilerOptions): string
+  compileToString (options?: CompileRouterToStringOptions): string
 }
 
 /**
@@ -31,6 +31,16 @@ export interface RouteRulesRouter {
 export function normalizeRouteRulePath (path: string, fold: boolean): string {
   const decoded = decodeRoutePath(path)
   return fold ? decoded.toLowerCase() : decoded
+}
+
+/**
+ * Normalise a lookup path like {@link normalizeRouteRulePath}, then percent-encode it the way
+ * rou3 encodes the literal text of the keys it is matched against.
+ *
+ * @internal
+ */
+export function normalizeRouteRuleLookupPath (path: string, fold: boolean): string {
+  return encodeRoutePath(normalizeRouteRulePath(path, fold))
 }
 
 /**
@@ -123,7 +133,7 @@ export function createRouteRulesRouter (routes: RouteRulesRoute[], baseURL: stri
       // a lone catch-all under no base matches every path, so it compiles to its data rather
       // than a lookup; under a base the router compiles the prefix check itself
       if (base || routes.length !== 1 || routes[0]!.route !== '/**' || !!routes[0]!.method) {
-        return compileRouterToString(router, undefined, options)
+        return compileRouterToString(router, options)
       }
       const data = (options?.serialize || JSON.stringify)(routes[0]!.data)
       const match = `{data,params:{"_":p.slice(1)}}`
@@ -141,10 +151,11 @@ export function createRouteRulesRouter (routes: RouteRulesRoute[], baseURL: stri
  */
 export const normalizePathCode: string = [
   `const decodeRoutePath = ${decodeRoutePath.toString()}`,
+  `const encodeRoutePath = ${encodeRoutePath.toString()}`,
   `const normalizePath = (path, fold) => {`,
   `  if (typeof path !== 'string') { return path }`,
   `  const decoded = decodeRoutePath(path)`,
-  `  return fold ? decoded.toLowerCase() : decoded`,
+  `  return encodeRoutePath(fold ? decoded.toLowerCase() : decoded)`,
   `}`,
 ].join('\n')
 
